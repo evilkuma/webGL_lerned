@@ -1,9 +1,9 @@
 "use strict";
 
-var canvas, gl, program, attribs = {}, example = 1, pik = Math.PI/180;
+var canvas, gl, program, attribs = {}, buffers = {}, example = 2, pik = Math.PI/180;
 var params = {
-  _translationX: 200,
-  _translationY: 150,
+  _translationX: 0,
+  _translationY: 0,
   _angle: 0,
   _scaleX: 1, 
   _scaleY: 1,
@@ -44,8 +44,8 @@ function buildUserInterface() {
   // 1 - translation x control
   var control = document.createElement('input');
   control.type = 'range';
-  control.min = -100;
-  control.max = 1000;
+  control.min = 0;
+  control.max = canvas.width;
   control.value = params._translationX;
   control.oninput = e => {
     params._translationX = e.target.value;
@@ -55,11 +55,11 @@ function buildUserInterface() {
   // 2 - translation y control
   var control = document.createElement('input');
   control.type = 'range';
-  control.min = -700;
-  control.max = 100;
+  control.min = 0;
+  control.max = canvas.height;
   control.value = -params._translationY;
   control.oninput = e => {
-    params._translationY = -e.target.value;
+    params._translationY = e.target.value;
     drawScene();
   };
   appendControl('translate Y', control);
@@ -176,28 +176,32 @@ function setCirc(gl, sx, sy, r, n) {
 }
 
 function drawScene() {
-  var matrix = m3.projection(gl.canvas.clientWidth, gl.canvas.clientHeight);
-  matrix = m3.translate(matrix, params.translation[0], params.translation[1]);
-  matrix = m3.rotate(matrix, params.angle);
-  matrix = m3.scale(matrix, params.scale[0], params.scale[1]);
-
-
   gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
   gl.clearColor(0, 1, 0, 1);
   gl.clear(gl.COLOR_BUFFER_BIT);
-
   gl.useProgram(program);
-
-  gl.uniformMatrix3fv(attribs.matrixLocation, false, matrix);
   
+  gl.enableVertexAttribArray(attribs.position);
+  gl.bindBuffer(gl.ARRAY_BUFFER, buffers.position);
   var size = 2;          // 2 components per iteration
   var type = gl.FLOAT;   // the data is 32bit floats
   var normalize = false; // don't normalize the data
   var stride = 0;        // 0 = move forward size * sizeof(type) each iteration to get the next position
   var offset = 0;        // start at the beginning of the buffer
   gl.vertexAttribPointer(attribs.position, size, type, normalize, stride, offset);
+
+  gl.enableVertexAttribArray(attribs.color);
+  gl.bindBuffer(gl.ARRAY_BUFFER, buffers.color);
+  gl.vertexAttribPointer(attribs.color, 4, gl.FLOAT, false, 0, 0);
   
-  examples[example](gl, canvas);
+  var matrix = m3.projection(gl.canvas.clientWidth, gl.canvas.clientHeight);
+  matrix = m3.translate(matrix, params.translation[0], params.translation[1]);
+  matrix = m3.rotate(matrix, params.angle);
+  matrix = m3.scale(matrix, params.scale[0], params.scale[1]);
+  gl.uniformMatrix3fv(attribs.matrixLocation, false, matrix);
+
+  gl.drawArrays(gl.TRIANGLES, 0, 75);
+  
 }
 
 function main() {
@@ -210,30 +214,21 @@ function main() {
 
   var vertexShaderSource = `
     attribute vec2 a_position;
+    attribute vec4 a_color;
 
-    // uniform vec2 u_resolution;
     uniform mat3 u_matrix;
 
     varying vec4 v_color;
     
     void main() {
-        // vec2 zeroToOne = a_position / u_resolution;
-
-        // vec2 zeroToTwo = zeroToOne * 2.0;
-
-        // vec2 clipSpace = zeroToTwo - 1.0;
-
-        // gl_Position = vec4(clipSpace * vec2(1, -1), 0, 1);
-
         gl_Position = vec4((u_matrix * vec3(a_position, 1)).xy, 0, 1);
 
-        v_color = gl_Position * 0.5 + 0.5; // что бы было от 0 до 1
+        v_color = a_color;
     }
   `;
   var fragmentShaderSource = `
     precision mediump float;
     
-    // uniform vec4 u_color;
     varying vec4 v_color;
 
     void main() {
@@ -247,19 +242,17 @@ function main() {
   program = createProgram(gl, vertexShader, fragmentShader);
 
   attribs.position = gl.getAttribLocation(program, "a_position");
+  attribs.color = gl.getAttribLocation(program, 'a_color');
   attribs.matrixLocation = gl.getUniformLocation(program, "u_matrix");
-  // var resolutionUniformLocation = gl.getUniformLocation(program, "u_resolution");
-  // var colorUniformLocation = gl.getUniformLocation(program, "u_color");
 
-  var positionBuffer = gl.createBuffer();
-  gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
-  
-  gl.enableVertexAttribArray(attribs.position);
+  buffers.position = gl.createBuffer();
+  buffers.color = gl.createBuffer();
+
+  examples[example]();
 
 //   webglUtils.resizeCanvasToDisplaySize(gl.canvas);
 
   drawScene();
-  // gl.uniform2f(resolutionUniformLocation, gl.canvas.width, gl.canvas.height);
 }
 
 var examples = [
@@ -296,17 +289,28 @@ var examples = [
   /**
    * 2 example
    */
-  function(gl, canvas, colorUniformLocation) {
+  function() {
+    // use positions
+    gl.bindBuffer(gl.ARRAY_BUFFER, buffers.position);
+    // setRect(gl, -50, -50, 100, 100);
+    setCirc(gl, 0, 0, 50, 25);
+
+    // use colors
+    var colors = [];
+    // triangles count
+    for(var i = 0; i < 75; i++) {
+      var r = Math.random();
+      var g = Math.random();
+      var b = Math.random();
+      colors.push(r, g, b, 1);
+    }
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, buffers.color);
     gl.bufferData(
       gl.ARRAY_BUFFER,
-      new Float32Array([
-          0, -100,
-          150,  125,
-          -175,  100
-      ]),
+      new Float32Array(colors),
       gl.STATIC_DRAW
     );
-    gl.drawArrays(gl.TRIANGLES, 0, 3);
   }
 ];
 
