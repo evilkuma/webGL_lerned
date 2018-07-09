@@ -1,6 +1,7 @@
 "use strict";
 
-var canvas, gl, program, attribs = {}, buffers = {}, example = 2, pik = Math.PI/180;
+var canvas, gl, program, attribs = {}, buffers = {}, example = 3, pik = Math.PI/180;
+var images = {}, textures = {};
 var params = {
   _translationX: 0,
   _translationY: 0,
@@ -28,6 +29,9 @@ function buildUserInterface() {
   canvas.height = 500;
   canvas.style.border = "10px solid black";
   document.body.appendChild(canvas);
+
+  params._translationX = canvas.width/2;
+  params._translationY = canvas.height/2;
 
   // make controls
   var appendControl = (caption, control) => {
@@ -190,9 +194,9 @@ function drawScene() {
   var offset = 0;        // start at the beginning of the buffer
   gl.vertexAttribPointer(attribs.position, size, type, normalize, stride, offset);
 
-  gl.enableVertexAttribArray(attribs.color);
-  gl.bindBuffer(gl.ARRAY_BUFFER, buffers.color);
-  gl.vertexAttribPointer(attribs.color, 4, gl.FLOAT, false, 0, 0);
+  gl.enableVertexAttribArray(attribs.texture);
+  gl.bindBuffer(gl.ARRAY_BUFFER, buffers.texture);
+  gl.vertexAttribPointer(attribs.texture, 2, gl.FLOAT, false, 0, 0);
   
   var matrix = m3.projection(gl.canvas.clientWidth, gl.canvas.clientHeight);
   matrix = m3.translate(matrix, params.translation[0], params.translation[1]);
@@ -200,8 +204,54 @@ function drawScene() {
   matrix = m3.scale(matrix, params.scale[0], params.scale[1]);
   gl.uniformMatrix3fv(attribs.matrixLocation, false, matrix);
 
-  gl.drawArrays(gl.TRIANGLES, 0, 75);
+  gl.drawArrays(gl.TRIANGLES, 0, 6);
   
+}
+
+function render() {
+  var vertexShaderSource = `
+    attribute vec2 a_position;
+    attribute vec2 a_texCoord;
+
+    uniform mat3 u_matrix;
+    
+    varying vec2 v_texCoord;
+
+    void main() {
+        gl_Position = vec4((u_matrix * vec3(a_position, 1)).xy, 0, 1);
+
+        v_texCoord = a_texCoord;
+    }
+  `;
+  var fragmentShaderSource = `
+    precision mediump float;
+
+    uniform sampler2D u_image;
+
+    varying vec2 v_texCoord;
+
+    void main() {
+        gl_FragColor = texture2D(u_image, v_texCoord);
+    }
+  `;
+
+  var vertexShader = createShader(gl, gl.VERTEX_SHADER, vertexShaderSource);
+  var fragmentShader = createShader(gl, gl.FRAGMENT_SHADER, fragmentShaderSource);
+
+  program = createProgram(gl, vertexShader, fragmentShader);
+
+  attribs.position = gl.getAttribLocation(program, "a_position");
+  attribs.matrixLocation = gl.getUniformLocation(program, "u_matrix");
+  attribs.texture = gl.getAttribLocation(program, "a_texCoord");
+
+  buffers.position = gl.createBuffer();
+  buffers.texture = gl.createBuffer();
+
+  examples[example]();
+
+//   webglUtils.resizeCanvasToDisplaySize(gl.canvas);
+
+  drawScene();
 }
 
 function main() {
@@ -212,47 +262,11 @@ function main() {
     return;
   }
 
-  var vertexShaderSource = `
-    attribute vec2 a_position;
-    attribute vec4 a_color;
-
-    uniform mat3 u_matrix;
-
-    varying vec4 v_color;
-    
-    void main() {
-        gl_Position = vec4((u_matrix * vec3(a_position, 1)).xy, 0, 1);
-
-        v_color = a_color;
-    }
-  `;
-  var fragmentShaderSource = `
-    precision mediump float;
-    
-    varying vec4 v_color;
-
-    void main() {
-        gl_FragColor = v_color;
-    }
-  `;
-
-  var vertexShader = createShader(gl, gl.VERTEX_SHADER, vertexShaderSource);
-  var fragmentShader = createShader(gl, gl.FRAGMENT_SHADER, fragmentShaderSource);
-
-  program = createProgram(gl, vertexShader, fragmentShader);
-
-  attribs.position = gl.getAttribLocation(program, "a_position");
-  attribs.color = gl.getAttribLocation(program, 'a_color');
-  attribs.matrixLocation = gl.getUniformLocation(program, "u_matrix");
-
-  buffers.position = gl.createBuffer();
-  buffers.color = gl.createBuffer();
-
-  examples[example]();
-
-//   webglUtils.resizeCanvasToDisplaySize(gl.canvas);
-
-  drawScene();
+  images.test = new Image();
+  images.test.onload = e => {
+    render();
+  };
+  images.test.src = 'textures/1.jpg';
 }
 
 var examples = [
@@ -311,6 +325,40 @@ var examples = [
       new Float32Array(colors),
       gl.STATIC_DRAW
     );
+  },
+  /**
+   * 3 example
+   */
+  function() {
+    // use pos
+    gl.bindBuffer(gl.ARRAY_BUFFER, buffers.position);
+    setRect(gl, -images.test.width/2, -images.test.height/2, images.test.width, images.test.height);
+
+    // use texture
+    gl.bindBuffer(gl.ARRAY_BUFFER, buffers.texture);
+    gl.bufferData(
+      gl.ARRAY_BUFFER, 
+      new Float32Array([
+        0.0,  0.0,
+        1.0,  0.0,
+        0.0,  1.0,
+        0.0,  1.0,
+        1.0,  0.0,
+        1.0,  1.0
+      ]), 
+      gl.STATIC_DRAW
+    );
+
+    // create texture
+    textures.test = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, textures.test);
+
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, images.test);
   }
 ];
 
