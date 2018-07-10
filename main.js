@@ -1,13 +1,14 @@
 "use strict";
 
 var canvas, gl, program, attribs = {}, buffers = {}, example = 3, pik = Math.PI/180;
-var images = {}, textures = {};
+var images = [];
 var params = {
   _translationX: 0,
   _translationY: 0,
   _angle: 0,
   _scaleX: 1, 
   _scaleY: 1,
+  _imageID: 0,
   get translation() {
     return [this._translationX, this._translationY];
   },
@@ -19,6 +20,32 @@ var params = {
   },
   set angle(val) {
     this._angle = val * pik;
+  },
+  get textureId() {
+    return this._imageID;
+  },
+  set texture(val) {
+    this._imageID = val;
+    if(this.image.complete) {
+      drawScene();
+    } else {
+      this.image.onload = e => {
+        drawScene();
+      };
+    }
+  },
+  get texture() {
+    gl.bindTexture(gl.TEXTURE_2D, gl.createTexture());
+
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, params.image);
+  },
+  get image() {
+    return images[this._imageID];
   }
 };
 
@@ -57,18 +84,18 @@ function buildUserInterface() {
   };
   appendControl('translate X', control);
   // 2 - translation y control
-  var control = document.createElement('input');
+  control = document.createElement('input');
   control.type = 'range';
   control.min = 0;
   control.max = canvas.height;
-  control.value = -params._translationY;
+  control.value = params._translationY;
   control.oninput = e => {
     params._translationY = e.target.value;
     drawScene();
   };
   appendControl('translate Y', control);
   // 3 - rotate control
-  var control = document.createElement('input');
+  control = document.createElement('input');
   control.type = 'range';
   control.min = -360;
   control.max = 360;
@@ -79,7 +106,7 @@ function buildUserInterface() {
   };
   appendControl('rotate', control);
   // 4 - scale x control
-  var control = document.createElement('input');
+  control = document.createElement('input');
   control.type = 'range';
   control.min = -5;
   control.max = 5;
@@ -91,7 +118,7 @@ function buildUserInterface() {
   };
   appendControl('scale x', control);
   // 5 - scale y control
-  var control = document.createElement('input');
+  control = document.createElement('input');
   control.type = 'range';
   control.min = -5;
   control.max = 5;
@@ -102,6 +129,16 @@ function buildUserInterface() {
     drawScene();
   };
   appendControl('scale y', control);
+  // 6 - change texture control
+  control = document.createElement('select');
+  for(var i = 0; i < images.length; i++) {
+    control.add(new Option(i+1, i));
+  }
+  control.value = 0;
+  control.onchange = e => {
+    params.texture = Number(e.target.value);
+  };
+  appendControl('change texture', control);
 }
 
 function createShader(gl, type, source) {
@@ -185,6 +222,8 @@ function drawScene() {
   gl.clear(gl.COLOR_BUFFER_BIT);
   gl.useProgram(program);
   
+  params.texture;
+
   gl.enableVertexAttribArray(attribs.position);
   gl.bindBuffer(gl.ARRAY_BUFFER, buffers.position);
   var size = 2;          // 2 components per iteration
@@ -203,6 +242,8 @@ function drawScene() {
   matrix = m3.rotate(matrix, params.angle);
   matrix = m3.scale(matrix, params.scale[0], params.scale[1]);
   gl.uniformMatrix3fv(attribs.matrixLocation, false, matrix);
+
+  gl.uniform2f(attribs.textureSize, params.image.width, params.image.height);
 
   gl.drawArrays(gl.TRIANGLES, 0, 6);
   
@@ -227,11 +268,19 @@ function render() {
     precision mediump float;
 
     uniform sampler2D u_image;
+    uniform vec2 u_textureSize;
 
     varying vec2 v_texCoord;
 
     void main() {
+        vec2 onePixel = vec2(1.0, 1.0) / u_textureSize;
+
         gl_FragColor = texture2D(u_image, v_texCoord);
+        // gl_FragColor = (
+        //   texture2D(u_image, v_texCoord) +
+        //   texture2D(u_image, v_texCoord + vec2(onePixel.x, 0.0)) +
+        //   texture2D(u_image, v_texCoord + vec2(-onePixel.x, 0.0))
+        // ) / 3.0;
     }
   `;
 
@@ -243,6 +292,8 @@ function render() {
   attribs.position = gl.getAttribLocation(program, "a_position");
   attribs.matrixLocation = gl.getUniformLocation(program, "u_matrix");
   attribs.texture = gl.getAttribLocation(program, "a_texCoord");
+  attribs.textureSize = gl.getUniformLocation(program, "u_textureSize");
+
 
   buffers.position = gl.createBuffer();
   buffers.texture = gl.createBuffer();
@@ -251,10 +302,15 @@ function render() {
 
 //   webglUtils.resizeCanvasToDisplaySize(gl.canvas);
 
-  drawScene();
+  // drawScene();
 }
 
 function main() {
+  for(var i = 0; i < 2; i++) {
+    images.push(new Image());
+    images[i].src = `textures/${i+1}.jpg`;
+  }
+
   buildUserInterface();
 
   gl = canvas.getContext("webgl");
@@ -262,11 +318,16 @@ function main() {
     return;
   }
 
-  images.test = new Image();
-  images.test.onload = e => {
+  // render();
+  if(params.image.complete) {
     render();
-  };
-  images.test.src = 'textures/1.jpg';
+    drawScene();
+  } else {
+    params.image.onload = e => {
+      render();
+      drawScene();
+    };
+  }
 }
 
 var examples = [
@@ -332,7 +393,7 @@ var examples = [
   function() {
     // use pos
     gl.bindBuffer(gl.ARRAY_BUFFER, buffers.position);
-    setRect(gl, -images.test.width/2, -images.test.height/2, images.test.width, images.test.height);
+    setRect(gl, -params.image.width/2, -params.image.height/2, params.image.width, params.image.height);
 
     // use texture
     gl.bindBuffer(gl.ARRAY_BUFFER, buffers.texture);
@@ -350,15 +411,15 @@ var examples = [
     );
 
     // create texture
-    textures.test = gl.createTexture();
-    gl.bindTexture(gl.TEXTURE_2D, textures.test);
+    // textures.test = gl.createTexture();
+    // gl.bindTexture(gl.TEXTURE_2D, textures.test);
 
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    // gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    // gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    // gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    // gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
 
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, images.test);
+    // gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, params.image);
   }
 ];
 
