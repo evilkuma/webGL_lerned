@@ -194,27 +194,75 @@ function setRect(gl, x, y, w, h) {
     );
 }
 
-function setCirc(gl, sx, sy, r, n) {
+function setCirc(gl, sx, sy, r, n, makeTexUVs) {
+    gl.bindBuffer(gl.ARRAY_BUFFER, buffers.position);
     var positions = [];
+    var texpos = [];
     var pi2 = 2*Math.PI;
     var pi2n = pi2/n;
     var x1 = sx; //Math.sin(0) = 0
     var y1 = r + sy; // Math.cos(0) = 1
     positions.push(x1, y1, x1, sy); // y1 - r = sy
+    texpos.push(x1/r, y1/r, sx/r, sy/r);
+    var i = 1;
     for(var k = pi2n; k < pi2; k += pi2n) {
         var x = r * Math.sin(k) + sx;
         var y = r * Math.cos(k) + sy;
+        var z = i/(n/4);
+        var k_x = 1;
+        var k_y = 1;
+        if(z >= 3) {
+          k_x = -1;
+        } else if(z >= 2) {
+          k_x = -1;
+          k_y = -1;
+        } else if(z >= 1) {
+          k_y = -1;
+        }
         positions.push(x, y);
         positions.push(x, y, x1, sy);
+        texpos.push(k_x*x/r, k_y*y/r);
+        texpos.push(k_x*x/r, k_y*y/r, k_x*sx/r, k_y*sy/r);
+        i++;
     }
     positions.push(x1, y1);
+    texpos.push(k_x*x1/r, k_y*y1/r);
 
     gl.bufferData(
         gl.ARRAY_BUFFER,
         new Float32Array(positions),
         gl.STATIC_DRAW
     );
+    
+    if(makeTexUVs) {
+      gl.bindBuffer(gl.ARRAY_BUFFER, buffers.texture);
+      gl.bufferData(
+        gl.ARRAY_BUFFER,
+        new Float32Array(texpos), 
+        gl.STATIC_DRAW
+      );
+    }
 }
+
+/**
+ * 
+      0.0,  0.0,
+      0.5,  0.5,
+      1.0,  0.0,
+
+      1.0,  0.0,
+      0.5,  0.5,
+      1.0,  1.0,
+
+      1.0,  1.0,
+      0.5,  0.5,
+      0.0,  1.0,
+
+      0.0,  1.0,
+      0.5,  0.5,
+      0.0,  0.0,
+ * 
+ */
 
 function drawScene() {
   gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
@@ -245,7 +293,7 @@ function drawScene() {
 
   gl.uniform2f(attribs.textureSize, params.image.width, params.image.height);
 
-  gl.drawArrays(gl.TRIANGLES, 0, 6);
+  gl.drawArrays(gl.TRIANGLES, 0, 16*3);
   
 }
 
@@ -392,24 +440,10 @@ var examples = [
    */
   function() {
     // use pos
-    gl.bindBuffer(gl.ARRAY_BUFFER, buffers.position);
-    setRect(gl, -params.image.width/2, -params.image.height/2, params.image.width, params.image.height);
+    // setRect(gl, -params.image.width/2, -params.image.height/2, params.image.width, params.image.height);
+    setCirc(gl, 0, 0, params.image.width/2, 16, true);
 
     // use texture
-    gl.bindBuffer(gl.ARRAY_BUFFER, buffers.texture);
-    gl.bufferData(
-      gl.ARRAY_BUFFER, 
-      new Float32Array([
-        0.0,  0.0,
-        1.0,  0.0,
-        0.0,  1.0,
-        0.0,  1.0,
-        1.0,  0.0,
-        1.0,  1.0
-      ]), 
-      gl.STATIC_DRAW
-    );
-
     // create texture
     // textures.test = gl.createTexture();
     // gl.bindTexture(gl.TEXTURE_2D, textures.test);
